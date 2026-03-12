@@ -182,6 +182,7 @@ body.zen-mode textarea:focus, body.zen-mode input[type="text"]:focus { border-co
 </div>
 <div class="tab-bar" id="tabBar">
 <div class="tab-item" onclick="go('pacientes')" data-tab="pacientes">Pacientes</div>
+<div class="tab-item" onclick="go('prontuarios')" data-tab="prontuarios">Prontuários</div>
 <div class="tab-item active" onclick="go('financeiro')" data-tab="financeiro">Financeiro</div>
 <div class="tab-item tab-more" onclick="toggleToolsMenu(event)" data-tab="tools">&#8943; Mais</div>
 <div class="tools-dropdown" id="toolsDropdown">
@@ -877,6 +878,7 @@ function renderApp(){var el=document.getElementById('app');
   var wm=document.getElementById('welcomeMsg');if(wm)wm.textContent=PROF.nome?'Olá, '+PROF.nome.split(' ')[0]:'';
   if(page==='home')renderHome(el);
   else if(page==='pacientes')renderPac(el);
+  else if(page==='prontuarios')renderProntuarios(el);
   else if(page==='agenda'){el.innerHTML='';}
   else if(page==='financeiro')renderFin(el);
   else if(page==='documentos'){if(laudoState.step==='edit'){renderLaudoEditor();return}renderDocs(el);}
@@ -1140,7 +1142,8 @@ function renderPac(el){
     var sessColor='#4361EE';var sessBg='transparent';var sessLabel='';
     if(proxSess){var td=today();var tmr=function(){var d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0]}();if(proxSess.data===td){sessColor='var(--primary)';sessBg='var(--primaryFaded)';sessLabel=' · Hoje'}else if(proxSess.data===tmr){sessColor='#b45309';sessBg='rgba(251,191,36,.1)';sessLabel=' · Amanhã'}}
     var pacValorMensal = p.modalidade==='sessao' ? (p.valor * 4) : p.valor;
-    return'<div style="padding:16px 20px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer" onclick="openPerfil(\''+p.id+'\')"><div class="avatar">'+p.nome.charAt(0).toUpperCase()+'</div><div style="flex:1;min-width:0"><div style="font-weight:600">'+p.nome+'</div><div style="font-size:12px;color:var(--textMuted)">'+(p.telefone||'')+(cidsStr?' · '+cidsStr:'')+'</div>'+(medsStr?'<div style="font-size:11px;color:var(--accent);margin-top:2px">'+medsStr+'</div>':'')+(proxSess?'<div style="font-size:11px;font-weight:600;color:'+sessColor+';margin-top:2px;padding:2px 6px;border-radius:4px;background:'+sessBg+';display:inline-block">'+fmtD(proxSess.data)+' '+proxSess.hora+sessLabel+'</div>':'')+'</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="badge '+(p.modalidade==='pacote'?'bg-green':'bg-yellow')+'">'+(p.modalidade==='pacote'?'Pacote':'Sessão (x4)')+'</span>'+(p.valor?'<div style="font-size:12px;font-weight:600">'+fmt$(pacValorMensal)+'/mês</div>':'')+'</div></div>'}).join('')+'</div>');
+    return'<div style="padding:16px 20px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer" onclick="openPerfil(\''+p.id+'\')"><div class="avatar">'+p.nome.charAt(0).toUpperCase()+'</div><div style="flex:1;min-width:0"><div style="font-weight:600">'+p.nome+'</div><div style="font-size:12px;color:var(--textMuted)">'+(p.telefone||'')+(cidsStr?' · '+cidsStr:'')+'</div>'+(medsStr?'<div style="font-size:11px;color:var(--accent);margin-top:2px">'+medsStr+'</div>':'')+(proxSess?'<div style="font-size:11px;font-weight:600;color:'+sessColor+';margin-top:2px;padding:2px 6px;border-radius:4px;background:'+sessBg+';display:inline-block">'+fmtD(proxSess.data)+' '+proxSess.hora+sessLabel+'</div>':'')+'</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="badge '+(p.modalidade==='pacote'?'bg-green':'bg-yellow')+'">'+(p.modalidade==='pacote'?'Pacote':'Sessão (x4)')+'</span>'+(p.valor?'<div style="font-size:12px;font-weight:600">'+fmt$(pacValorMensal)+'/mês</div>':'')+'</div></div>'
+  }).join('')+'</div>');
 }
 
 // === PACIENTE FORM (sem agendamento) ===
@@ -1602,6 +1605,44 @@ function delSessApply(id,scope){
   save();hideModal();renderApp();
 }
 
+// === PRONTUÁRIOS GLOBAIS ===
+function renderProntuarios(el){
+  var evols = (D.evolucoes||[]).slice().sort(function(a,b){return b.data.localeCompare(a.data)});
+  var pacs = D.pacientes;
+  
+  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px"><h2 style="font-family:var(--fontD);font-size:24px">Prontuários <span style="font-size:15px;font-weight:400;color:var(--textMuted)">('+evols.length+')</span></h2></div>';
+  
+  if(!evols.length){
+    html+='<div class="empty">Nenhuma evolução registrada até o momento.</div>';
+    el.innerHTML=html;
+    return;
+  }
+  
+  html+='<div class="timeline-feed">';
+  var curMonth='';
+  
+  evols.forEach(function(e){
+    var evMonth=e.data.substring(0,7);
+    if(evMonth!==curMonth){
+       var mLabel=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+       var mp=evMonth.split('-');
+       html+='<div class="timeline-month">'+mLabel[parseInt(mp[1])-1]+' '+mp[0]+'</div>';
+       curMonth=evMonth;
+    }
+    html+='<div class="timeline-card card" style="cursor:pointer" onclick="profPacId=\''+e.pacienteId+'\';go(\'perfil\')">'+
+    '<div class="timeline-icon" style="background:var(--primaryFaded);color:var(--primary)">&#9998;</div>'+
+    '<div class="timeline-body"><div class="title">'+fmtD(e.data)+' \xB7 '+getNome(e.pacienteId)+' (Evolução Clínica)</div>'+
+    (e.s?'<div class="text"><strong>S:</strong> '+e.s+'</div>':'')+
+    (e.o?'<div class="text"><strong>O:</strong> '+e.o+'</div>':'')+
+    (e.a?'<div class="text"><strong>A:</strong> '+e.a+'</div>':'')+
+    (e.p?'<div class="text"><strong>P:</strong> '+e.p+'</div>':'')+
+    (e.livre?'<div class="text">'+(e.livre.length>100?e.livre.substring(0,100)+'...':e.livre)+'</div>':'')+
+    '</div></div>';
+  });
+  html+='</div>';
+  el.innerHTML=html;
+}
+
 // === CHATGPT API INTEGRATION (Clinical Assistant) ===
 function gerarResumoIA(){
   if(!CFG.openAiKey)return;
@@ -1720,7 +1761,8 @@ function renderFin(el){
     function rndCards(arr,bCls){
       if(!arr.length)return'<div style="text-align:center;padding:20px;color:var(--textFaint);font-size:12px">Vazio</div>';
       return arr.map(function(p){
-        return'<div class="kanban-card '+bCls+'" draggable="true" ondragstart="kDragStart(event,\''+p.id+'\')"><div class="k-title" onclick="openPerfil(\''+p.pacienteId+'\')" style="cursor:pointer">'+getNome(p.pacienteId)+'</div><div class="k-sub">'+fmtD(p.data)+' \xB7 '+(p.obs||'')+'</div><div class="k-val">'+fmt$(p.valor)+'</div><div style="text-align:right;margin-top:6px"><button onclick="editPag(\''+p.id+'\')" class="btn btn-o btn-s" style="font-size:10px;padding:2px 6px">Editar</button></div></div>';
+        var quickBt=p.status==='pendente'?'<button onclick="payPag(\''+p.id+'\')" class="btn btn-p btn-s" style="font-size:10px;padding:2px 6px;margin-right:6px">Dar Baixa</button>':'';
+        return'<div class="kanban-card '+bCls+'" draggable="true" ondragstart="kDragStart(event,\''+p.id+'\')"><div class="k-title" onclick="openPerfil(\''+p.pacienteId+'\')" style="cursor:pointer">'+getNome(p.pacienteId)+'</div><div class="k-sub">'+fmtD(p.data)+' \xB7 '+(p.obs||'')+'</div><div class="k-val">'+fmt$(p.valor)+'</div><div style="text-align:right;margin-top:6px">'+quickBt+'<button onclick="editPag(\''+p.id+'\')" class="btn btn-o btn-s" style="font-size:10px;padding:2px 6px">Editar</button></div></div>';
       }).join('');
     }
     
