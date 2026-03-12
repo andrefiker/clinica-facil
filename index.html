@@ -850,7 +850,7 @@ function fmtDT(d){if(!d)return'';return new Date(d).toLocaleDateString('pt-BR',{
 function today(){return new Date().toISOString().split('T')[0]}
 function pad(n){return n<10?'0'+n:''+n}
 function norm(s){return(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
-function getNome(pid){var p=D.pacientes.find(function(x){return x.id===pid});return p?p.nome:'(removido)'}
+function getNome(pid){var p=D.pacientes.find(function(x){return x.id===pid});return p?(p.nome||'Sem Nome'):'(removido)'}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show')},1800)}
 
 // === Navigation ===
@@ -1141,8 +1141,9 @@ function renderPac(el){
     var proxSess=D.sessoes.filter(function(s){return s.pacienteId===p.id&&s.data>=today()}).sort(function(a,b){return a.data.localeCompare(b.data)})[0];
     var sessColor='#4361EE';var sessBg='transparent';var sessLabel='';
     if(proxSess){var td=today();var tmr=function(){var d=new Date();d.setDate(d.getDate()+1);return d.toISOString().split('T')[0]}();if(proxSess.data===td){sessColor='var(--primary)';sessBg='var(--primaryFaded)';sessLabel=' · Hoje'}else if(proxSess.data===tmr){sessColor='#b45309';sessBg='rgba(251,191,36,.1)';sessLabel=' · Amanhã'}}
-    var pacValorMensal = p.modalidade==='sessao' ? (p.valor * 4) : p.valor;
-    return'<div style="padding:16px 20px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer" onclick="openPerfil(\''+p.id+'\')"><div class="avatar">'+p.nome.charAt(0).toUpperCase()+'</div><div style="flex:1;min-width:0"><div style="font-weight:600">'+p.nome+'</div><div style="font-size:12px;color:var(--textMuted)">'+(p.telefone||'')+(cidsStr?' · '+cidsStr:'')+'</div>'+(medsStr?'<div style="font-size:11px;color:var(--accent);margin-top:2px">'+medsStr+'</div>':'')+(proxSess?'<div style="font-size:11px;font-weight:600;color:'+sessColor+';margin-top:2px;padding:2px 6px;border-radius:4px;background:'+sessBg+';display:inline-block">'+fmtD(proxSess.data)+' '+proxSess.hora+sessLabel+'</div>':'')+'</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="badge '+(p.modalidade==='pacote'?'bg-green':'bg-yellow')+'">'+(p.modalidade==='pacote'?'Pacote':'Sessão (x4)')+'</span>'+(p.valor?'<div style="font-size:12px;font-weight:600">'+fmt$(pacValorMensal)+'/mês</div>':'')+'</div></div>'
+    var pacValorMensal = p.modalidade==='sessao' ? ((p.valor||0) * 4) : (p.valor||0);
+    var pNome = p.nome || 'Sem Nome';
+    return'<div style="padding:16px 20px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer" onclick="openPerfil(\''+p.id+'\')"><div class="avatar">'+pNome.charAt(0).toUpperCase()+'</div><div style="flex:1;min-width:0"><div style="font-weight:600">'+pNome+'</div><div style="font-size:12px;color:var(--textMuted)">'+(p.telefone||'')+(cidsStr?' · '+cidsStr:'')+'</div>'+(medsStr?'<div style="font-size:11px;color:var(--accent);margin-top:2px">'+medsStr+'</div>':'')+(proxSess?'<div style="font-size:11px;font-weight:600;color:'+sessColor+';margin-top:2px;padding:2px 6px;border-radius:4px;background:'+sessBg+';display:inline-block">'+fmtD(proxSess.data)+' '+proxSess.hora+sessLabel+'</div>':'')+'</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="badge '+(p.modalidade==='pacote'?'bg-green':'bg-yellow')+'">'+(p.modalidade==='pacote'?'Pacote':'Sessão (x4)')+'</span>'+(p.valor?'<div style="font-size:12px;font-weight:600">'+fmt$(pacValorMensal)+'/mês</div>':'')+'</div></div>'
   }).join('')+'</div>');
 }
 
