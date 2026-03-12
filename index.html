@@ -1225,8 +1225,9 @@ function renderPerfil(el){
   var cidsStr=(p.cids||[]).map(function(c){return'<span class="badge" style="background:var(--primaryFaded);color:var(--primary);border:1px solid var(--border);margin:2px">'+c.code+' '+c.name+'</span>'}).join(' ');
   var medsStr=(p.meds||[]).map(function(m){var dl=getDoseLevel(m);var dlBadge=dl&&dl.label?' <span style="font-size:9px;padding:1px 5px;border-radius:6px;color:#fff;background:'+dl.color+'">'+dl.label+'</span>':'';return'<span class="badge" style="background:var(--surfaceAlt);color:var(--text);border:1px solid var(--border);margin:2px">'+m.name+(m.dose?' '+m.dose+(m.unit||''):'')+dlBadge+'</span>'}).join(' ');
 
+  var pNome = p.nome || 'Sem Nome';
   var header='<div style="margin-bottom:20px"><button class="btn btn-g" onclick="go(\'pacientes\')" style="margin-bottom:12px">← Voltar</button>'+
-  '<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px"><div class="avatar" style="width:56px;height:56px;font-size:22px">'+p.nome.charAt(0).toUpperCase()+'</div><div><h2 style="font-family:var(--fontD);font-size:22px">'+p.nome+'</h2><div style="font-size:13px;color:var(--textMuted)">'+(p.telefone||'')+(p.email?' · '+p.email:'')+(p.nascimento?' · Nasc: '+fmtD(p.nascimento):'')+'</div></div><div style="margin-left:auto"><button class="btn btn-o btn-s" onclick="openPacForm(\''+p.id+'\')">Editar</button></div></div>'+
+  '<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px"><div class="avatar" style="width:56px;height:56px;font-size:22px">'+pNome.charAt(0).toUpperCase()+'</div><div><h2 style="font-family:var(--fontD);font-size:22px">'+pNome+'</h2><div style="font-size:13px;color:var(--textMuted)">'+(p.telefone||'')+(p.email?' · '+p.email:'')+(p.nascimento?' · Nasc: '+fmtD(p.nascimento):'')+'</div></div><div style="margin-left:auto"><button class="btn btn-o btn-s" onclick="openPacForm(\''+p.id+'\')">Editar</button></div></div>'+
   (cidsStr?'<div style="margin-bottom:6px">'+cidsStr+'</div>':'')+
   (medsStr?'<div style="margin-bottom:6px">'+medsStr+'</div>':'')+
   '</div>';
