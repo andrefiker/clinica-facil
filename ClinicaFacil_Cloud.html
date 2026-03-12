@@ -1196,7 +1196,14 @@ function renderPerfil(el){
       var tagStr='';
       if(n.tags&&n.tags.length){tagStr='<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">'+n.tags.map(function(t){return'<span style="font-size:10px;padding:2px 8px;background:var(--primaryFaded);color:var(--primary);border-radius:10px;font-weight:600">'+t+'</span>'}).join('')+'</div>'}
       var transBtn='';
-      if(n.transcricao){transBtn='<div style="margin-top:8px"><button class="btn btn-o btn-s" style="font-size:11px" onclick="event.stopPropagation();viewTranscript(\''+n.id+'\')">📝 Ver transcrição ('+Math.round(n.transcricao.length/1000)+'KB)</button></div>'}
+      if(n.transcricao){
+        if(n.transcricao.startsWith('[FILE_BASE64]')){
+          var fName=n.transcricao.substring(13).split('|')[0];
+          transBtn='<div style="margin-top:8px"><button class="btn btn-o btn-s" style="font-size:11px" onclick="event.stopPropagation();downloadTranscript(\''+n.id+'\')">📎 Baixar '+fName+'</button></div>';
+        } else {
+          transBtn='<div style="margin-top:8px"><button class="btn btn-o btn-s" style="font-size:11px" onclick="event.stopPropagation();viewTranscript(\''+n.id+'\')">📝 Ver transcrição ('+Math.round(n.transcricao.length/1000)+'KB)</button></div>';
+        }
+      }
       var preview='';
       if(n.soap){
         var parts=[];
@@ -1271,7 +1278,7 @@ function evoFormHTML(n){
   '<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--textSecondary);margin-bottom:6px;display:block">Formato da nota</label><div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn '+(isSOAP?'btn-p':'btn-o')+' btn-s" onclick="toggleEvoFormat(true)">SOAP</button><button class="btn '+(!isSOAP?'btn-p':'btn-o')+' btn-s" onclick="toggleEvoFormat(false)">Livre</button></div></div>'+
   '<div id="evoFormatArea">'+(isSOAP?evoSOAPFields(soap):evoFreeField(n.texto||''))+'</div>'+
   '<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600;color:var(--textSecondary);margin-bottom:8px;display:block">Intervenções utilizadas</label><div id="evoTagArea" style="display:flex;flex-wrap:wrap;gap:6px">'+EVOL_TAGS.map(function(t){var sel=evoTagSel.indexOf(t)>=0;return'<button class="btn btn-s '+(sel?'btn-p':'btn-o')+'" style="font-size:11px;padding:4px 10px" onclick="toggleEvoTag(this,\''+t.replace(/'/g,"\\'")+'\')">'+t+'</button>'}).join('')+'</div></div>'+
-  '<div style="margin-bottom:14px;padding:16px;border:1.5px dashed var(--border);border-radius:var(--radius);background:var(--surfaceAlt)"><label style="font-size:12px;font-weight:600;color:var(--textSecondary);margin-bottom:8px;display:block">Transcrição da sessão <span style="font-weight:400">(opcional)</span></label>'+(n.transcricao?'<div id="evoTransStatus" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="color:var(--primary);font-weight:600;font-size:13px">✓ Transcrição carregada ('+Math.round(n.transcricao.length/1000)+'KB)</span><button class="btn btn-g btn-s" onclick="window._evoTranscricao=null;document.getElementById(\'evoTransStatus\').innerHTML=\'<span style=color:var(--textMuted);font-size:13px>Transcrição removida</span>\'">Remover</button></div>':'')+'<div style="display:flex;gap:8px;align-items:center"><input type="file" id="evoTransFile" accept=".txt,.srt,.vtt,.doc,.rtf,.md" style="font-size:12px;flex:1" onchange="loadTranscript(this)"><button class="btn btn-o btn-s" onclick="pasteTranscript()" style="white-space:nowrap">Colar texto</button></div><div id="evoTransPreview" style="margin-top:8px;font-size:12px;color:var(--textMuted);max-height:60px;overflow:hidden"></div></div>'+
+  '<div style="margin-bottom:14px;padding:16px;border:1.5px dashed var(--border);border-radius:var(--radius);background:var(--surfaceAlt)"><label style="font-size:12px;font-weight:600;color:var(--textSecondary);margin-bottom:8px;display:block">Transcrição ou Anexo <span style="font-weight:400">(opcional)</span></label>'+(n.transcricao?'<div id="evoTransStatus" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="color:var(--primary);font-weight:600;font-size:13px">✓ '+(n.transcricao.startsWith('[FILE_BASE64]')?'Arquivo anexo':('Transcrição ('+Math.round(n.transcricao.length/1000)+'KB)'))+' salvo</span><button class="btn btn-g btn-s" onclick="window._evoTranscricao=null;document.getElementById(\'evoTransStatus\').innerHTML=\'<span style=color:var(--textMuted);font-size:13px>Tanscrição/Arquivo removido</span>\'">Remover</button></div>':'')+'<div style="display:flex;gap:8px;align-items:center"><input type="file" id="evoTransFile" accept=".txt,.srt,.vtt,.doc,.docx,.rtf,.md,.pdf,.mp3,.m4a" style="font-size:12px;flex:1" onchange="loadTranscript(this)"><button class="btn btn-o btn-s" onclick="pasteTranscript()" style="white-space:nowrap">Colar texto</button></div><div id="evoTransPreview" style="margin-top:8px;font-size:12px;color:var(--textMuted);max-height:60px;overflow:hidden"></div></div>'+
   '<div style="text-align:right;margin-top:16px"><button class="btn btn-p" onclick="saveEvol(\''+(n.id||'')+'\')">Salvar</button></div>';
   return h;
 }
@@ -1339,7 +1346,14 @@ function viewEvolNote(nid){
   var tagStr='';
   if(n.tags&&n.tags.length){tagStr='<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><div style="font-size:11px;font-weight:600;color:var(--textMuted);margin-bottom:8px">INTERVENÇÕES</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+n.tags.map(function(t){return'<span style="font-size:11px;padding:3px 10px;background:var(--primaryFaded);color:var(--primary);border-radius:10px;font-weight:600">'+t+'</span>'}).join('')+'</div></div>'}
   var transSection='';
-  if(n.transcricao){transSection='<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:11px;font-weight:600;color:var(--textMuted)">TRANSCRIÇÃO DA SESSÃO ('+Math.round(n.transcricao.length/1000)+'KB)</div><div style="display:flex;gap:6px"><button class="btn btn-o btn-s" style="font-size:11px" onclick="copyTranscript(\''+n.id+'\')">Copiar</button><button class="btn btn-o btn-s" style="font-size:11px" onclick="downloadTranscript(\''+n.id+'\')">Baixar</button></div></div><div style="max-height:200px;overflow:auto;padding:12px;background:var(--surfaceAlt);border-radius:var(--radiusSm);font-size:12px;line-height:1.7;white-space:pre-wrap;font-family:monospace;color:var(--textSecondary)">'+n.transcricao.substring(0,3000).replace(/</g,'&lt;')+(n.transcricao.length>3000?'\n\n... [clique em "Copiar" ou "Baixar" para ver tudo]':'')+'</div></div>'}
+  if(n.transcricao){
+    if(n.transcricao.startsWith('[FILE_BASE64]')) {
+      var fName = n.transcricao.substring(13).split('|')[0];
+      transSection='<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:11px;font-weight:600;color:var(--textMuted)">ARQUIVO ANEXO</div><button class="btn btn-o btn-s" style="font-size:11px" onclick="downloadTranscript(\''+n.id+'\')">Baixar '+fName+'</button></div></div>';
+    } else {
+      transSection='<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:11px;font-weight:600;color:var(--textMuted)">TRANSCRIÇÃO DA SESSÃO ('+Math.round(n.transcricao.length/1000)+'KB)</div><div style="display:flex;gap:6px"><button class="btn btn-o btn-s" style="font-size:11px" onclick="copyTranscript(\''+n.id+'\')">Copiar</button><button class="btn btn-o btn-s" style="font-size:11px" onclick="downloadTranscript(\''+n.id+'\')">Baixar</button></div></div><div style="max-height:200px;overflow:auto;padding:12px;background:var(--surfaceAlt);border-radius:var(--radiusSm);font-size:12px;line-height:1.7;white-space:pre-wrap;font-family:monospace;color:var(--textSecondary)">'+n.transcricao.substring(0,3000).replace(/</g,'&lt;')+(n.transcricao.length>3000?'\n\n... [clique em "Copiar" ou "Baixar" para ver tudo]':'')+'</div></div>';
+    }
+  }
   showModal('<div class="modal-header"><h2>Sessão #'+sessNum+' — '+fmtD(n.data)+' '+n.hora+'</h2><button class="close" onclick="hideModal()">&times;</button></div>'+
   '<div style="margin-bottom:12px">'+humorBadge+ansBadge+'</div>'+body+tagStr+transSection+
   '<div style="text-align:right;margin-top:20px"><button class="btn btn-o" onclick="editEvolNote(\''+n.id+'\')">Editar</button></div>');
@@ -1347,15 +1361,21 @@ function viewEvolNote(nid){
 
 function loadTranscript(input){
   var file=input.files[0];if(!file)return;
+  var isText=file.name.match(/\.(txt|md|srt|vtt|csv)$/i);
   var reader=new FileReader();
   reader.onload=function(e){
-    window._evoTranscricao=e.target.result;
+    if(isText){
+      window._evoTranscricao=e.target.result;
+    }else{
+      window._evoTranscricao='[FILE_BASE64]'+file.name+'|'+e.target.result;
+    }
     var preview=document.getElementById('evoTransPreview');
-    if(preview){preview.innerHTML='<strong>'+file.name+'</strong> — '+Math.round(file.size/1024)+'KB carregado<br>'+window._evoTranscricao.substring(0,200).replace(/</g,'&lt;')+'...'}
+    if(preview){preview.innerHTML='<strong>'+file.name+'</strong> — '+Math.round(file.size/1024)+'KB carregado<br>'+(isText?window._evoTranscricao.substring(0,200).replace(/</g,'&lt;')+'...':'Documento anexado.')}
     var status=document.getElementById('evoTransStatus');
     if(status){status.innerHTML='<span style="color:var(--primary);font-weight:600;font-size:13px">✓ '+file.name+' carregado</span>'}
   };
-  reader.readAsText(file);
+  if(isText) reader.readAsText(file);
+  else reader.readAsDataURL(file);
 }
 
 function pasteTranscript(){
@@ -1377,6 +1397,7 @@ function savePastedTranscript(){
 function viewTranscript(nid){
   var n=(D.evolucoes||[]).find(function(x){return x.id===nid});
   if(!n||!n.transcricao){alert('Sem transcrição disponível');return}
+  if(n.transcricao.startsWith('[FILE_BASE64]')){downloadTranscript(nid);return}
   var pac=D.pacientes.find(function(p){return p.id===n.pacienteId});
   var nome=pac?pac.nome:'Paciente';
   showModal('<div class="modal-header"><h2>Transcrição — '+nome+'</h2><button class="close" onclick="hideModal()">&times;</button></div>'+
@@ -1387,7 +1408,7 @@ function viewTranscript(nid){
 
 function copyTranscript(nid){
   var n=(D.evolucoes||[]).find(function(x){return x.id===nid});
-  if(!n||!n.transcricao)return;
+  if(!n||!n.transcricao||n.transcricao.startsWith('[FILE_BASE64]'))return;
   navigator.clipboard.writeText(n.transcricao).then(function(){toast('Transcrição copiada')}).catch(function(){
     var ta=document.createElement('textarea');ta.value=n.transcricao;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);toast('Transcrição copiada');
   });
@@ -1396,6 +1417,11 @@ function copyTranscript(nid){
 function downloadTranscript(nid){
   var n=(D.evolucoes||[]).find(function(x){return x.id===nid});
   if(!n||!n.transcricao)return;
+  if(n.transcricao.startsWith('[FILE_BASE64]')){
+    var parts=n.transcricao.substring(13).split('|');
+    var a=document.createElement('a');a.href=parts[1];a.download=parts[0];a.click();
+    return;
+  }
   var pac=D.pacientes.find(function(p){return p.id===n.pacienteId});
   var nome=pac?pac.nome.replace(/\s+/g,'_'):'paciente';
   var blob=new Blob([n.transcricao],{type:'text/plain'});
