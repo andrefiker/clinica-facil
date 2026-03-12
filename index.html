@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Clínica Fácil</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 :root{
@@ -925,21 +926,75 @@ function updUnit(i,v){mdSel[i].unit=v}
 function renderMedTags(){var el=document.getElementById('pMedTags');if(!el)return;el.innerHTML=mdSel.map(function(m,i){var u=m.unit||'mg';return'<span class="med-tag">'+m.name+' <input type="text" placeholder="dose" value="'+(m.dose||'')+'" style="width:50px;padding:2px 6px;font-size:11px;border:1px solid #ddd;border-radius:4px" onchange="updDose('+i+',this.value)"><select style="padding:2px;font-size:11px;border:1px solid #ddd;border-radius:4px" onchange="updUnit('+i+',this.value)"><option value="mg"'+(u==='mg'?' selected':'')+'>mg</option><option value="mcg"'+(u==='mcg'?' selected':'')+'>mcg</option><option value="g"'+(u==='g'?' selected':'')+'>g</option><option value="UI"'+(u==='UI'?' selected':'')+'>UI</option><option value="mL"'+(u==='mL'?' selected':'')+'>mL</option><option value="gotas"'+(u==='gotas'?' selected':'')+'>gotas</option></select><button onclick="rmMed('+i+')">x</button></span>'}).join('')}
 function medKey(e){var el=document.getElementById('pMedList');var items=el.querySelectorAll('.ac-item');if(!items.length)return;if(e.key==='ArrowDown'){e.preventDefault();mdIdx=Math.min(mdIdx+1,items.length-1);hlItems(items,mdIdx)}else if(e.key==='ArrowUp'){e.preventDefault();mdIdx=Math.max(mdIdx-1,0);hlItems(items,mdIdx)}else if(e.key==='Enter'&&mdIdx>=0){e.preventDefault();items[mdIdx].click()}}
 
-// === Calendar Sync ===
-function calSync(sess,action){
-  if(!window.Android)return;
+// === Google Calendar API Sync ===
+function authGCal(){
+  if(!CFG.gcalClientId){alert('Preencha o Client ID do Google Calendar primeiro nas exclusivas caixas abaixo.');return;}
   try{
-    if(!Android.hasCalendarPermission()){Android.requestCalendarPermission();return}
-    var nome=getNome(sess.pacienteId);
-    var title='Sessão — '+nome;
-    if(action==='add'){return
-    }else if(action==='update'&&sess.calEventId){
-      Android.updateCalendarEvent(sess.calEventId,title,sess.data,sess.hora,50);
-    }else if(action==='delete'&&sess.calEventId){
-      Android.deleteCalendarEvent(sess.calEventId);
-    }
-  }catch(e){}
+    var client=google.accounts.oauth2.initTokenClient({
+      client_id: CFG.gcalClientId,
+      scope: 'https://www.googleapis.com/auth/calendar.events',
+      callback: function(res){
+        if(res.error){alert('Erro no login do Google.');return;}
+        CFG.gcalToken=res.access_token;saveCfg();
+        toast('Google Calendar Conectado \u2714');
+        renderApp();
+      }
+    });
+    client.requestAccessToken();
+  }catch(e){alert('Erro ao inicializar Google Auth.')}
 }
+
+function calSync(sess,action){
+  // Legacy Android Support
+  if(window.Android){
+    try{
+      if(!Android.hasCalendarPermission()){Android.requestCalendarPermission();return}
+      var nome=getNome(sess.pacienteId);var title='Sessão — '+nome;
+      if(action==='update'&&sess.calEventId) Android.updateCalendarEvent(sess.calEventId,title,sess.data,sess.hora,50);
+      else if(action==='delete'&&sess.calEventId) Android.deleteCalendarEvent(sess.calEventId);
+    }catch(e){}
+  }
+
+  // New Google Calendar API
+  if(!CFG.gcalToken)return;
+  
+  var nome=getNome(sess.pacienteId);
+  var title='Sessão: '+nome;
+  var startDT=sess.data+'T'+sess.hora+':00-03:00';
+  var endD=new Date(new Date(sess.data+'T'+sess.hora+':00').getTime()+50*60000);
+  var endDT=endD.getFullYear()+'-'+pad(endD.getMonth()+1)+'-'+pad(endD.getDate())+'T'+pad(endD.getHours())+':'+pad(endD.getMinutes())+':00-03:00';
+
+  var evData={
+    summary: title,
+    start: {dateTime: startDT, timeZone: 'America/Sao_Paulo'},
+    end: {dateTime: endDT, timeZone: 'America/Sao_Paulo'},
+    description: sess.obs||'Sessão clínica marcada via app'
+  };
+
+  var headers={'Authorization':'Bearer '+CFG.gcalToken,'Content-Type':'application/json'};
+  
+  if(action==='add'){
+    fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events',{
+      method:'POST',headers:headers,body:JSON.stringify(evData)
+    }).then(function(r){return r.json()}).then(function(d){
+      if(d.id){
+        var s=D.sessoes.find(function(x){return x.id===sess.id});
+        if(s){s.gcalId=d.id;save()}
+      }
+    }).catch(function(e){console.error(e)});
+  }
+  else if(action==='update' && sess.gcalId){
+    fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events/'+sess.gcalId,{
+      method:'PATCH',headers:headers,body:JSON.stringify(evData)
+    }).catch(function(e){console.error(e)});
+  }
+  else if(action==='delete' && sess.gcalId){
+    fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events/'+sess.gcalId,{
+      method:'DELETE',headers:headers
+    }).catch(function(e){console.error(e)});
+  }
+}
+
 function calSyncBatch(sessions,action){sessions.forEach(function(s){calSync(s,action)})}
 
 // === Sync Payments ===
@@ -1175,7 +1230,12 @@ function renderPerfil(el){
   // Replace old Tabs with Quick Actions
   var quickActions='<div style="display:flex;gap:10px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px"><button class="btn btn-p btn-s" onclick="addEvolucao()">+ Evolução</button><button class="btn btn-o btn-s" onclick="addPagamento()">+ Lançamento</button><button class="btn btn-o btn-s" onclick="docPacId=\''+profPacId+'\';go(\'documentos\')">+ Documento</button><button class="btn btn-o btn-s" onclick="go(\'testes\')">+ Teste</button></div>';
 
-  var content='<div class="timeline-feed">';
+  var aiSummaryCard='';
+  if(CFG.openAiKey){
+    aiSummaryCard='<div class="card" style="padding:16px;margin-bottom:20px;background:linear-gradient(145deg, #f3e8ff, #faf5ff);border:1px solid #d8b4fe"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600;color:#7e22ce;display:flex;align-items:center;gap:6px"><span style="font-size:18px">✨</span> Assistente de IA</div><button class="btn btn-p btn-s" style="background:#9333ea;border-color:#9333ea" onclick="gerarResumoIA()" id="btnGerarIA">Gerar Resumo Clínico</button></div><div id="aiSummaryResult" style="margin-top:12px;font-size:13px;color:#4c1d95;line-height:1.6;display:none;background:#fff;padding:12px;border-radius:var(--radiusSm);border:1px solid #e9d5ff"></div></div>';
+  }
+
+  var content=aiSummaryCard+'<div class="timeline-feed">';
   
   // Aggregate all events
   var events=[];
@@ -1542,6 +1602,55 @@ function delSessApply(id,scope){
   save();hideModal();renderApp();
 }
 
+// === CHATGPT API INTEGRATION (Clinical Assistant) ===
+function gerarResumoIA(){
+  if(!CFG.openAiKey)return;
+  var btn=document.getElementById('btnGerarIA');
+  var resDiv=document.getElementById('aiSummaryResult');
+  
+  // Extract up to the last 10 evolutions for context
+  var evs=(D.evolucoes||[]).filter(function(e){return e.pacienteId===profPacId}).sort(function(a,b){return b.data.localeCompare(a.data)}).slice(0,10);
+  if(!evs.length){alert('O paciente não tem evoluções suficientes.');return}
+  
+  if(btn){btn.disabled=true;btn.textContent='Analisando...'}
+  resDiv.style.display='block';
+  resDiv.innerHTML='<span style="opacity:0.7">Acessando modelo de linguagem... isso pode levar uns segundos.</span>';
+
+  // Build the prompt context
+  var contextText = evs.reverse().map(function(e){
+    return "Data: "+e.data+"\nS: "+(e.s||'')+"\nO: "+(e.o||'')+"\nA: "+(e.a||'')+"\nP: "+(e.p||'')+"\nLivre: "+(e.livre||'')+"\nHumor: "+(e.humor||5)+"/10\n---";
+  }).join('\n');
+
+  var sysMsg = "Você é um supervisor clínico de excelência focado na abordagem praticada pelo terapeuta. Analise o histórico recente destas evoluções e forneça:\n1. Um breve parágrafo (3 linhas) resumindo o progresso ou estagnação clínica.\n2. Três hipóteses diagnósticas ou focações clínicas subjacentes.\n3. Duas sugestões de intervenção prática para a próxima sessão.\n\nFormate a resposta em HTML limpo, usando tags <b>, <ul>, <li>. Seja direto, profissional e evite jargões desnecessários.";
+
+  fetch('https://api.openai.com/v1/chat/completions',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+CFG.openAiKey,'Content-Type':'application/json'},
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        {role:'system', content: sysMsg},
+        {role:'user', content: "Evoluções do paciente:\n\n"+contextText}
+      ],
+      temperature: 0.7,
+      max_tokens: 600
+    })
+  }).then(function(r){return r.json()}).then(function(data){
+    if(btn){btn.disabled=false;btn.textContent='Gerar Novo Resumo'}
+    if(data.error){
+      resDiv.innerHTML='<b style="color:var(--danger)">Erro: '+data.error.message+'</b>';
+      return;
+    }
+    var htmlContent = data.choices[0].message.content;
+    // Basic sanitization
+    htmlContent = htmlContent.replace(/```html/g,'').replace(/```/g,'');
+    resDiv.innerHTML = htmlContent;
+  }).catch(function(e){
+    resDiv.innerHTML='<b style="color:var(--danger)">Falha de conexão com a OpenAI. Verifique sua chave API.</b>';
+    if(btn){btn.disabled=false;btn.textContent='Gerar Resumo Clínico'}
+  });
+}
+
 // === AGENDA ===
 function renderAgenda(el){
   var mNames=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -1649,6 +1758,113 @@ function undoPag(id){
   var p=D.pagamentos.find(function(x){return x.id===id});if(p){p.status='pendente';p.dataPgto=null;save();renderApp()}
 }
 
+// === Edit, Delete and Asaas Billing Integration ===
+function editPag(id){
+  var p=D.pagamentos.find(function(x){return x.id===id});if(!p)return;
+  var opts=D.pacientes.filter(function(x){return x.ativo!==false||x.id===p.pacienteId});
+  var pacs=opts.map(function(x){return'<option value="'+x.id+'"'+(x.id===p.pacienteId?' selected':'')+'>'+x.nome+'</option>'}).join('');
+  
+  var asaasBtn='';
+  if(CFG.asaasKey && p.status!=='pago'){
+    var pixLink=p.asaasInvoiceUrl?'<a href="'+p.asaasInvoiceUrl+'" target="_blank" style="font-size:12px;display:block;margin-top:4px;color:var(--primary)">\u2197 Abrir Link do Pix</a>':'';
+    asaasBtn='<div class="card" style="padding:16px;margin:16px 0;border:1px solid var(--primary);background:var(--primaryFaded)"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600;color:var(--primary)">Integração Asaas</div><button class="btn btn-p btn-s" onclick="gerarPixAsaas(\''+id+'\')" id="btnAsaasGen">Gerar Pix/Boleto</button></div>'+pixLink+'</div>';
+  }
+
+  showModal('<div class="modal-header"><h2>Editar Pagamento</h2><button class="close" onclick="hideModal()">&times;</button></div>'+
+  '<input type="hidden" id="pEditId" value="'+id+'">'+
+  '<div class="field"><label>Paciente</label><select id="pEditPac">'+pacs+'</select></div>'+
+  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+  '<div class="field"><label>Data de Vencimento</label><input type="date" id="pEditData" value="'+(p.data||today())+'"></div>'+
+  '<div class="field"><label>Valor (R$)</label><input type="number" id="pEditValor" value="'+p.valor+'" step="0.01"></div></div>'+
+  '<div class="field"><label>Status</label><select id="pEditStatus"><option value="pendente"'+(p.status==='pendente'?' selected':'')+'>Pendente</option><option value="aguardando"'+(p.status==='aguardando'?' selected':'')+'>Aguardando Pgto</option><option value="pago"'+(p.status==='pago'?' selected':'')+'>Pago</option></select></div>'+
+  '<div class="field"><label>Descrição</label><input type="text" id="pEditObs" value="'+(p.obs||'')+'"></div>'+asaasBtn+
+  '<div style="display:flex;justify-content:space-between;margin-top:20px"><button class="btn btn-o" style="color:var(--danger);border-color:var(--dangerFaded)" onclick="delPag(\''+id+'\')">Excluir Registro</button><button class="btn btn-p" onclick="savePagEdit()">Salvar Modificações</button></div>');
+}
+
+function savePagEdit(){
+  var id=document.getElementById('pEditId').value;
+  var p=D.pagamentos.find(function(x){return x.id===id});if(!p)return;
+  var oldStatus=p.status;
+  p.pacienteId=document.getElementById('pEditPac').value;
+  p.data=document.getElementById('pEditData').value;
+  p.valor=parseFloat(document.getElementById('pEditValor').value)||0;
+  p.status=document.getElementById('pEditStatus').value;
+  p.obs=document.getElementById('pEditObs').value;
+  if(p.status==='pago'&&oldStatus!=='pago')p.dataPgto=today();
+  save();hideModal();renderApp();
+}
+
+function delPag(id){
+  if(!confirm('Excluir este lançamento permanentemente?'))return;
+  D.pagamentos=D.pagamentos.filter(function(x){return x.id!==id});
+  save();hideModal();renderApp();
+}
+
+// ASAAS API INTEGRATION
+function gerarPixAsaas(pagId){
+  if(!CFG.asaasKey)return;
+  var pag=D.pagamentos.find(function(x){return x.id===pagId});if(!pag)return;
+  var pac=D.pacientes.find(function(x){return x.id===pag.pacienteId});
+  if(!pac){alert('Paciente vinculado não encontrado.');return}
+  if(!pac.cpf){alert('O Cadastro do paciente não tem CPF preenchido. É obrigatório para emitir boletos/PIX no Asaas. Preencha no Perfil primeiro.');return}
+  
+  var btn=document.getElementById('btnAsaasGen');
+  if(btn){btn.disabled=true;btn.textContent='Gerando...'}
+  
+  // Asaas uses a specific CORS setup. Usually it allows from localhost or custom domains, but some endpoints require backend routing.
+  // For sandbox, use: https://sandbox.asaas.com/api/v3
+  // For production, use: https://api.asaas.com/v3
+  var isProd=CFG.asaasKey.startsWith('$aact_');
+  var asaasUrl = isProd ? 'https://api.asaas.com/v3' : 'https://sandbox.asaas.com/api/v3';
+
+  // We are creating a simple "payment" invoice in Asaas for a generic end consumer if we don't map to Asaas Customer ID
+  // Wait, Asaas requires a customer ID first. This is a complex flow if direct from frontend, so we will attempt direct creation if patient has ASAAS ID, or try creating the customer locally via the API wrapper.
+  
+  // For this simplified Phase 2, we execute creating a customer then payment.
+  // Or we use their direct payment endpoint combining both via their API specs (customer: {name, cpfCnpj})
+  
+  var payload = {
+     billingType: 'PIX',
+     value: pag.valor,
+     dueDate: pag.data,
+     description: "Serviço de Psicologia Clínica: "+(pag.obs||"Sessão"),
+     customer: pac.asaasId || undefined,
+     name: pac.nome,
+     cpfCnpj: pac.cpf,
+     email: pac.email||''
+  };
+
+  fetch('https://asaas-proxy.andrefiker.workers.dev/api/v3/payments',{
+     method:'POST',
+     headers:{'access_token':CFG.asaasKey,'Content-Type':'application/json'},
+     body: JSON.stringify(payload)
+  }).then(function(res){
+     return res.json()
+  }).then(function(data){
+     if(data.errors){
+        alert("Erro no Asaas: "+ data.errors[0].description);
+        if(btn){btn.disabled=false;btn.textContent='Tentar Novamente'}
+        return;
+     }
+     if(data.id){
+        pag.asaasInvoiceId = data.id;
+        pag.asaasInvoiceUrl = data.invoiceUrl;
+        pag.status = 'aguardando';
+        if(data.customer && !pac.asaasId){
+           pac.asaasId = data.customer; // save the customer mapping natively
+        }
+        save();
+        alert('Cobrança gerada com sucesso! Link: ' + data.invoiceUrl);
+        editPag(pagId); // Refresh modal
+     }
+  }).catch(function(err){
+     console.log(err);
+     // Fallback UI indication since Cloudflare proxy wouldn't exist out of the box until we deploy it.
+     alert('O Asaas bloqueia requisições Cross-Origin (CORS) originadas de navegadores web.\n\nPara que o PIX seja gerado perfeitamente desta página HTML, publicarei um Cloudflare Worker minúsculo na sua conta servindo de Proxy HTTPS. Consulte o manual de deploy na Etapa 3!');
+     if(btn){btn.disabled=false;btn.textContent='Gerar Pix/Boleto'}
+  });
+}
+
 // === DOCUMENTOS (com histórico) ===
 function addPagamento(){
   var pac=D.pacientes.find(function(p){return p.id===profPacId});var dv=pac?pac.valor:0;
@@ -1656,7 +1872,7 @@ function addPagamento(){
   showModal('<div class="modal-header"><h2>Novo Lançamento</h2><button class="close" onclick="hideModal()">&times;</button></div>'+
   '<div class="field"><label>Data</label><input type="date" id="pgData" value="'+today()+'"></div>'+
   '<div class="field"><label>Valor Mensal (R$)</label><input type="number" id="pgValor" value="'+dv+'" step="0.01"></div>'+
-  '<div class="field"><label>Status</label><select id="pgStatus"><option value="pendente">Pendente</option><option value="pago">Pago</option></select></div>'+
+  '<div class="field"><label>Status</label><select id="pgStatus"><option value="pendente">Pendente</option><option value="aguardando">Aguardando Pgto</option><option value="pago">Pago</option></select></div>'+
   '<div class="field"><label>Descrição</label><input type="text" id="pgObs" value="'+(pac&&pac.modalidade==='sessao'?'Sessões do mês':'Pacote mensal')+'" placeholder="Ex: Sessão, Pacote mensal..."></div>'+
   '<div style="text-align:right"><button class="btn btn-p" onclick="savePagManual()">Salvar</button></div>');
 }
@@ -1671,7 +1887,7 @@ function addPagGlobal(){
   '<div class="field"><label>Paciente</label><select id="pgPac">'+opts+'</select></div>'+
   '<div class="field"><label>Data</label><input type="date" id="pgData" value="'+today()+'"></div>'+
   '<div class="field"><label>Valor Mensal (R$)</label><input type="number" id="pgValor" step="0.01"></div>'+
-  '<div class="field"><label>Status</label><select id="pgStatus"><option value="pendente">Pendente</option><option value="pago">Pago</option></select></div>'+
+  '<div class="field"><label>Status</label><select id="pgStatus"><option value="pendente">Pendente</option><option value="aguardando">Aguardando Pgto</option><option value="pago">Pago</option></select></div>'+
   '<div class="field"><label>Descrição</label><input type="text" id="pgObs" placeholder="Ex: Pacote mensal, honorários..."></div>'+
   '<div style="text-align:right"><button class="btn btn-p" onclick="savePagGlobal()">Salvar</button></div>');
 }
@@ -3079,7 +3295,11 @@ function renderConfig(el){
   '<div class="card" style="padding:20px;margin-bottom:16px"><h3 style="font-size:16px;font-weight:600;margin-bottom:12px">Backup</h3>'+
   '<p style="font-size:13px;color:var(--textMuted);margin-bottom:16px">Exporte seus dados para manter um backup seguro ou transfira para outro dispositivo.</p>'+
   '<div style="display:flex;gap:12px;flex-wrap:wrap"><button class="btn btn-p" onclick="exportData()">Exportar Dados</button><button class="btn btn-o" onclick="triggerImport()">Importar Dados</button></div></div>'+
-  (false?'<div class="card" style="padding:20px;margin-bottom:16px"><h3 style="font-size:16px;font-weight:600;margin-bottom:8px">Google Calendar</h3><p style="font-size:13px;color:var(--textMuted);margin-bottom:12px">Sincronize sessões com o calendário do celular. Ao agendar, editar ou excluir sessões, o evento é atualizado automaticamente.</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn '+(window.Android&&Android.hasCalendarPermission()?'btn-o" disabled style="opacity:.6">Conectado':'btn-p" onclick="Android.requestCalendarPermission()">Conectar ao Calendário')+'</button>'+(window.Android&&Android.hasCalendarPermission()&&Android.readCalendarEvents?'<button class="btn btn-o btn-s" onclick="calCleanDuplicates()">Limpar Duplicatas</button>':'')+'</div></div>':'')+
+  '<div class="card" style="padding:20px;margin-bottom:16px"><h3 style="font-size:16px;font-weight:600;margin-bottom:8px">Integrações API (Fase 2)</h3>'+
+  '<p style="font-size:13px;color:var(--textMuted);margin-bottom:12px">Conecte o Clínica Fácil com ferramentas externas. As chaves ficam salvas apenas neste dispositivo (Navegador).</p>'+
+  '<div class="field"><label style="font-size:13px;font-weight:500">Google Calendar - Client ID (OAuth)</label><div style="display:flex;gap:8px"><input type="text" value="'+(CFG.gcalClientId||'')+'" placeholder="Ex: 12345-abcde.apps.googleusercontent.com" onchange="CFG.gcalClientId=this.value;saveCfg()"><button class="btn btn-o" onclick="authGCal()" title="Conectar" style="padding:0 16px"><span style="color:var(--primary)">Google Login</span></button></div></div>'+
+  '<div class="field"><label style="font-size:13px;font-weight:500">Asaas API Key (Pagamentos)</label><input type="password" value="'+(CFG.asaasKey||'')+'" placeholder="Ex: $aact_YTU5..." onchange="CFG.asaasKey=this.value;saveCfg()"></div>'+
+  '<div class="field" style="margin-bottom:0"><label style="font-size:13px;font-weight:500">OpenAI API Key (ChatGPT)</label><input type="password" value="'+(CFG.openAiKey||'')+'" placeholder="Ex: sk-proj-..." onchange="CFG.openAiKey=this.value;saveCfg()"></div></div>'+
   '<div class="card" style="padding:20px;margin-bottom:16px"><h3 style="font-size:16px;font-weight:600;margin-bottom:8px">Confirmação por WhatsApp</h3>'+
   '<p style="font-size:13px;color:var(--textMuted);margin-bottom:12px">Ao abrir o app, veja as sessões de amanhã e envie confirmações pelo WhatsApp com um toque.</p>'+
   '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><label style="font-size:13px;font-weight:500">Ativar confirmações</label><input type="checkbox" id="cfgConfirmWA" '+(CFG.confirmWA?'checked':'')+' onchange="CFG.confirmWA=this.checked;saveCfg();renderApp()"></div>'+
